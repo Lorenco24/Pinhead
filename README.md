@@ -1,4 +1,3 @@
-````markdown
 # NBA Bad Bet Scoring App
 
 A Streamlit app that scores **how close a losing NBA bet came to winning** on a scale from **0 to 100**.
