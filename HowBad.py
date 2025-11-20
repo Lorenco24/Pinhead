@@ -108,15 +108,27 @@ def score_double_double(points, rebounds, assists):
     if cats >= 2:
         return None
 
+    # Scale stats relative to 10 and sort
     s = [min(P / 10.0, 1.0), min(R / 10.0, 1.0), min(A / 10.0, 1.0)]
     s.sort(reverse=True)
     s1, s2, s3 = s
 
     base = (s1 + s2) / 2.0
-    bonus = 0.1 * s3
+    base_score = (base ** 2) * 100.0
 
-    raw = 100.0 * (base ** 2 + bonus)
-    return clamp(raw)
+    # Hybrid logic:
+    # - s2 >= 0.9 : two stats basically at 9+ → very high scores, boosted by the 3rd stat
+    # - 0.8 <= s2 < 0.9 : one full, one around 8–9 → mid-range scores
+    # - s2 < 0.8 : only one or zero truly live stats → heavy penalty
+    if s2 >= 0.9:
+        score = base_score + 4.46 * s3 + 3.662
+    elif s2 >= 0.8:
+        score = 0.65 * base_score + 10.0 * s3
+    else:
+        score = 0.4 * base_score + 5.0 * s3
+
+    return clamp(score)
+
 
 def score_triple_double(points, rebounds, assists):
     P, R, A = float(points), float(rebounds), float(assists)
@@ -126,9 +138,42 @@ def score_triple_double(points, rebounds, assists):
         return None
 
     s = [min(P / 10.0, 1.0), min(R / 10.0, 1.0), min(A / 10.0, 1.0)]
+    hits = sum(1 for v in s if v >= 1.0)      # stats that actually hit 10+
+    nears = sum(1 for v in s if v >= 0.9)     # stats at 9+
+    s_sorted = sorted(s, reverse=True)
+    s1, s2, s3 = s_sorted
+
     base = sum(s) / 3.0
-    raw = 100.0 * (base ** 2)
-    return clamp(raw)
+    base_score = (base ** 2) * 100.0
+
+    # Hybrid logic for triple doubles:
+    # - 2 hits + 3rd >= 0.9 : insane near-miss (e.g. 40-15-9) → ~98+
+    # - 0 hits, all ~9      : 9-9-9 type → mid 50s
+    # - 1 hit, all ~9       : 12-9-9 type → mid 60s
+    # - 2 hits, 3rd middling: I/J/L type → 20s–30s
+    # - everything else     : mostly dead → low scores
+    if hits >= 2 and s3 >= 0.9:
+        # Brutal, near-perfect miss
+        score = 0.9 * base_score + 14.0
+    elif hits == 0 and nears == 3:
+        # 9-9-9 style
+        score = 0.68 * base_score
+    elif hits == 1 and nears == 3:
+        # 12-9-9 style
+        score = 0.75 * base_score
+    elif hits >= 2:
+        # Two stats at 10+, third somewhere between ~0.3–0.6
+        score = 1.223137585 * base_score - 51.038
+    else:
+        # Mostly dead: one or zero stats really alive
+        mid = sum(1 for v in s if v >= 0.6)
+        if mid >= 2:
+            score = 0.5 * base_score - 10.0
+        else:
+            score = 0.25 * base_score
+
+    return clamp(score)
+
 
 def comment_on_score(score):
     if score is None:
